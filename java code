@@ -1,0 +1,63 @@
+@Service
+public class WebhookService implements ApplicationRunner {
+
+    private final RestTemplate restTemplate = new RestTemplate();
+    private final String generateWebhookUrl = "https://bfhldevapigw.healthrx.co.in/hiring/generateWebhook/JAVA";
+    private final String testWebhookUrl = "https://bfhldevapigw.healthrx.co.in/hiring/testWebhook/JAVA";
+
+    @Override
+    public void run(ApplicationArguments args) {
+        WebhookRequest request = new WebhookRequest("John Doe", "REG12347", "john@example.com");
+
+        try {
+            ResponseEntity<WebhookResponse> response = restTemplate.postForEntity(
+                    generateWebhookUrl,
+                    request,
+                    WebhookResponse.class
+            );
+
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                String accessToken = response.getBody().getAccessToken();
+
+                String finalQuery = getFinalQuery();
+
+                sendFinalQuery(testWebhookUrl, accessToken, finalQuery);
+            } else {
+                System.err.println("Failed to generate webhook. Status: " + response.getStatusCode());
+            }
+
+        } catch (Exception ex) {
+            System.err.println("Error during webhook generation: " + ex.getMessage());
+        }
+    }
+
+    private String getFinalQuery() {
+        return "SELECT p.AMOUNT AS SALARY, CONCAT(e.FIRST_NAME, ' ', e.LAST_NAME) AS NAME, " +
+                "TIMESTAMPDIFF(YEAR, e.DOB, CURDATE()) AS AGE, d.DEPARTMENT_NAME " +
+                "FROM PAYMENTS p " +
+                "JOIN EMPLOYEE e ON p.EMP_ID = e.EMP_ID " +
+                "JOIN DEPARTMENT d ON e.DEPARTMENT = d.DEPARTMENT_ID " +
+                "WHERE DAY(p.PAYMENT_TIME) != 1 " +
+                "ORDER BY p.AMOUNT DESC " +
+                "LIMIT 1;";
+    }
+
+    private void sendFinalQuery(String webhookUrl, String token, String query) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(token);
+
+        Map<String, String> body = new HashMap<>();
+        body.put("finalQuery", query);
+
+        HttpEntity<Map<String, String>> entity = new HttpEntity<>(body, headers);
+
+        try {
+            ResponseEntity<String> response = restTemplate.postForEntity(webhookUrl, entity, String.class);
+            System.out.println("Response from webhook: " + response.getStatusCode());
+            System.out.println("Body: " + response.getBody());
+        } catch (Exception e) {
+            System.err.println("Error submitting final query: " + e.getMessage());
+        }
+    }
+}
